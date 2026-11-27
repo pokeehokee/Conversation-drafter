@@ -36,9 +36,12 @@ object PromptBuilder {
         if (lines.isNotEmpty()) {
             appendLine()
             appendLine("Conversation, oldest first, read from my screen. \"Me\" is me, \"Them\" is the other side, \"?\" means I couldn't tell who sent it:")
+            // In a group chat, say which of them said what.
+            val group = lines.mapNotNull { it.sender.takeIf { _ -> it.speaker == Speaker.THEM } }.distinct().size > 1
             for (l in lines) {
                 val t = if (l.text.length > MAX_LINE_CHARS) l.text.take(MAX_LINE_CHARS) + "…" else l.text
-                appendLine("${l.speaker.label}: $t")
+                val who = if (group && l.speaker == Speaker.THEM && l.sender != null) "Them (${l.sender})" else l.speaker.label
+                appendLine("$who: $t")
             }
         }
         if (req.hasScreenshot) {
