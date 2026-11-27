@@ -17,7 +17,7 @@ class StyleProfile(
     fun learn(lines: List<String>): Int {
         var added = 0
         for (raw in lines) {
-            val s = ChatReader.normalize(raw)
+            val s = ChatReader.cleanSample(raw) ?: continue
             if (!isUseful(s)) continue
             if (_samples.any { it.equals(s, ignoreCase = true) }) continue
             _samples += s
@@ -38,8 +38,9 @@ class StyleProfile(
     companion object {
         private const val SEP = "\u001E" // ASCII record separator, never typed in chats
 
+        /** Loads saved samples, cleaning ones saved before the screen-reader hints were stripped. */
         fun decode(stored: String?, notes: String = ""): StyleProfile =
-            StyleProfile(stored.orEmpty().split(SEP).filter { it.isNotBlank() }, notes)
+            StyleProfile(notes = notes).apply { learn(stored.orEmpty().split(SEP).filter { it.isNotBlank() }) }
 
         /** Splits pasted sample text into separate messages: one per line. */
         fun splitPasted(text: String): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }

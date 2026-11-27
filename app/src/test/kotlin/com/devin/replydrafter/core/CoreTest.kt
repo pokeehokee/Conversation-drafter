@@ -72,6 +72,60 @@ class ChatReaderTest {
         assertEquals(listOf("a", "b"), ChatReader.mergeOlder(listOf(l("a")), listOf(l("b"))).map { it.text })
     }
 
+    // Shaped like a real Messenger screen (made-up names and text): every bubble's description
+    // starts with the sender's name and ends with screen-reader hints, time stamps sit centered
+    // between bubbles, and a receipt sits under the last message.
+    @Test fun cleansMessengerAccessibilityText() {
+        val hints = ", double tap to see sent/receive date and time, double tap and hold to react on message"
+        val nodes = listOf(
+            ScreenNode("Sam Lee, Thread details", 160, 90, 640, 160),
+            ScreenNode("THU AT 6:53 PM", 380, 300, 700, 340),
+            me("Alex, Happy thanksgiving! Hope yours got better.$hints", 360),
+            ScreenNode("THU AT 8:47 PM", 380, 500, 700, 540),
+            me("Alex, What was the best thing you ate today?$hints", 560),
+            them("Sam, Ummm I don't know, it was all pretty good$hints", 720),
+            me("Alex, Yeah. Same.$hints", 880),
+            ScreenNode("Delivered 9 hours ago", 700, 1010, 1040, 1050),
+        )
+        val t = ChatReader.read(nodes, win, inputTop = 2150)
+        assertEquals("Sam Lee", t.title)
+        assertEquals(
+            listOf(
+                ChatLine(Speaker.ME, "Happy thanksgiving! Hope yours got better.", "Alex"),
+                ChatLine(Speaker.ME, "What was the best thing you ate today?", "Alex"),
+                ChatLine(Speaker.THEM, "Ummm I don't know, it was all pretty good", "Sam"),
+                ChatLine(Speaker.ME, "Yeah. Same.", "Alex"),
+            ),
+            t.lines,
+        )
+        val prompt = PromptBuilder.build(PromptRequest(t, "Messenger", Tone.AUTO, 1, StyleProfile(), hasScreenshot = false))
+        assertTrue(prompt.contains("Them: Ummm I don't know, it was all pretty good\nMe: Yeah. Same."))
+        assertFalse(prompt.contains("double tap"))
+        assertFalse(prompt.contains("Delivered"))
+        assertFalse(prompt.contains("?: "))
+    }
+
+    @Test fun senderNameDecidesSideEvenForCenteredBubble() {
+        val hints = ", double tap to see sent/receive date and time"
+        val nodes = listOf(
+            me("Alex, ok$hints", 400),
+            them("Sam, hi$hints", 560),
+            ScreenNode("Sam, sure thing$hints", 380, 720, 700, 840), // centered, would be "?"
+        )
+        assertEquals(listOf(Speaker.ME, Speaker.THEM, Speaker.THEM), ChatReader.read(nodes, win, 2150).lines.map { it.speaker })
+    }
+
+    @Test fun dropsReceiptsAndDateSeparators() {
+        listOf("Delivered 9 hours ago", "Seen", "Sent", "Seen by Sam at 9:02 PM", "THU AT 6:53 PM", "Yesterday at 4:10 PM", "Nov 3", "Sam is typing…")
+            .forEach { assertTrue(it, ChatReader.isNoise(it)) }
+        listOf("Seen it already", "Thursday works", "sounds good").forEach { assertFalse(it, ChatReader.isNoise(it)) }
+    }
+
+    @Test fun keepsCommasInMessagesWithoutHints() {
+        assertEquals("Well, ok", ChatReader.cleanNode(ScreenNode("Well, ok", 0, 0, 1, 1)).text)
+        assertEquals(null, ChatReader.cleanNode(ScreenNode("Well, ok", 0, 0, 1, 1)).sender)
+    }
+
     @Test fun notUsableWithOneSide() {
         val t = ChatReader.read(listOf(them("hi", 400)), win, 2150)
         assertFalse(t.isUsable)
@@ -87,6 +141,12 @@ class StyleProfileTest {
         val back = StyleProfile.decode(p.encode())
         assertEquals(p.samples, back.samples)
         assertEquals(listOf("a", "b"), StyleProfile.splitPasted(" a \n\n b "))
+    }
+
+    @Test fun cleansSamplesSavedBeforeTheFix() {
+        val hints = ", double tap to see sent/receive date and time, double tap and hold to react on message"
+        val old = listOf("Alex, Lol$hints", "Alex, Yeah. Same.$hints", "Delivered 9 hours ago", "Lol").joinToString("\u001E")
+        assertEquals(listOf("Lol", "Yeah. Same."), StyleProfile.decode(old).samples)
     }
 }
 
@@ -111,5 +171,14 @@ class PromptBuilderTest {
         assertTrue(s.contains("screenshot of the chat is attached"))
         assertTrue(s.contains("Give me 3 different options"))
         assertFalse(s.contains("How I write"))
+    }
+
+    @Test fun namesSpeakersInGroupChats() {
+        val t = Transcript(
+            "Trip",
+            listOf(ChatLine(Speaker.THEM, "who's driving", "Sam"), ChatLine(Speaker.THEM, "not me", "Jo"), ChatLine(Speaker.ME, "I will", "Alex")),
+        )
+        val s = PromptBuilder.build(PromptRequest(t, "Messenger", Tone.AUTO, 1, StyleProfile(), hasScreenshot = false))
+        assertTrue(s.contains("Them (Sam): who's driving\nThem (Jo): not me\nMe: I will"))
     }
 }
