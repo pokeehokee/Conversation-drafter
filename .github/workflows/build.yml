@@ -26,8 +26,25 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
+      - name: Load signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/replydrafter.p12"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/replydrafter.p12" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No SIGNING_KEYSTORE_B64 secret. This APK uses a throwaway debug key and won't install over other builds."
+          fi
+
       - name: Build debug APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/replydrafter.p12"
 
       - uses: actions/upload-artifact@v7
         with:

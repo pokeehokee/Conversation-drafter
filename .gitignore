@@ -6,3 +6,7 @@ local.properties
 *.iml
 verify-core/.gradle/
 verify-core/build/
+*.p12
+*.jks
+*.keystore
+key.txt

@@ -35,6 +35,7 @@ Needs Android 11 or later and the Claude app by Anthropic.
 
 - Android build: `./gradlew :app:assembleDebug` (AGP 9.5.1, Gradle 9.9.2, JDK 17+, compileSdk/targetSdk 37, minSdk 30). No libraries beyond the Android platform.
 - The GitHub Actions workflow in `.github/workflows/build.yml` runs the unit tests and uploads the debug APK.
+- Signing: every APK from CI is signed with one fixed key, so a new build installs over the old one. The key lives only in the repository's Actions secrets `SIGNING_KEYSTORE_B64` (the base64 of a PKCS12 file with alias `replydrafter`) and `SIGNING_PASSWORD`. Never commit it. Without those secrets, CI falls back to a throwaway debug key and the APK won't update an installed copy.
 - `verify-core/` is a plain-JVM build that compiles and tests the chat parsing, style and prompt code (`app/src/main/kotlin/.../core`) without the Android SDK: `gradle -p verify-core test`.
 
 ## Known limits
