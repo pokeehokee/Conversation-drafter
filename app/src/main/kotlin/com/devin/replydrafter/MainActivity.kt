@@ -29,7 +29,8 @@ class MainActivity : Activity() {
 
     private lateinit var settings: Settings
     private lateinit var serviceStatus: TextView
-    private lateinit var claudeStatus: TextView
+    private lateinit var aiStatus: TextView
+    private val aiButtons = mutableListOf<Pair<AiTarget, RadioButton>>()
     private lateinit var sampleCount: TextView
 
     private val density by lazy { resources.displayMetrics.density }
@@ -47,7 +48,7 @@ class MainActivity : Activity() {
         setContentView(scroll)
 
         col.addView(heading("Reply Drafter", 24f))
-        col.addView(body("Reads the chat you're in, hands it to your Claude app with your writing style, and pastes Claude's reply back into the message box. You always press send yourself."))
+        col.addView(body("Reads the chat you're in, hands it to the AI app you already use (Claude, ChatGPT, Gemini and others) with your writing style, and pastes the reply back into the message box. You always press send yourself."))
 
         // 1. Turn it on
         col.addView(section("1. Turn it on"))
@@ -66,15 +67,34 @@ class MainActivity : Activity() {
             button("Open Accessibility") { startActivity(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) },
         ))
 
-        // 2. Claude app
-        col.addView(section("2. Claude app"))
-        claudeStatus = body("")
-        col.addView(claudeStatus)
+        // 2. AI app
+        col.addView(section("2. Your AI app"))
+        col.addView(body("Pick the AI app you already pay for or trust. Drafts open in it, on your own account. Nothing goes through any other server."))
+        val ais = RadioGroup(this)
+        AiTarget.entries.forEachIndexed { i, t ->
+            val rb = RadioButton(this).apply { id = 4000 + i; isChecked = settings.aiTarget == t }
+            aiButtons += t to rb
+            ais.addView(rb)
+        }
+        ais.setOnCheckedChangeListener { _, id ->
+            settings.aiTarget = AiTarget.entries[id - 4000]
+            refresh()
+        }
+        col.addView(ais)
+        aiStatus = body("")
+        col.addView(aiStatus)
+        col.addView(Switch(this).apply {
+            text = "Open the AI app in split screen, under the chat"
+            isChecked = settings.splitScreen
+            setOnCheckedChangeListener { _, on -> settings.splitScreen = on }
+        })
+        col.addView(body("Works on most phones with Android 12L or later, if the AI app allows split screen. Otherwise it opens full screen as before."))
 
         // 3. How to open it
         col.addView(section("3. How to open it"))
-        col.addView(body("Bubble: tap the ✍ bubble on the right edge while you're in a chat (drag it up or down to move it).\n" +
-            "Quick Settings: add the Reply with Claude tile, then tap it from any chat.\n" +
+        col.addView(body("Bubble: tap the ✍ bubble on the right edge while you're in a chat (drag it up or down to move it). " +
+            "Long-press it to draft at once with that chat's last tone.\n" +
+            "Quick Settings: add the Draft reply tile, then tap it from any chat.\n" +
             "Accessibility button or gesture: Android adds one when the service is on, if your phone uses it."))
         val modes = RadioGroup(this)
         BubbleMode.entries.forEachIndexed { i, m ->
@@ -85,10 +105,16 @@ class MainActivity : Activity() {
             ReplyDrafterService.instance?.applyBubbleMode()
         }
         col.addView(modes)
+        col.addView(Switch(this).apply {
+            text = "Long-press the bubble to draft right away"
+            isChecked = settings.longPressDrafts
+            setOnCheckedChangeListener { _, on -> settings.longPressDrafts = on }
+        })
+        col.addView(body("When you come back to the chat, a Paste reply pill shows above the message box. Copy the reply in your AI app first, then tap it."))
 
         // 4. Replies
         col.addView(section("4. Replies"))
-        col.addView(body("Default tone (you can change it each time in the panel):"))
+        col.addView(body("Default tone. Each chat remembers the last tone you used there:"))
         col.addView(Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, Tone.entries.map { it.label })
             setSelection(Tone.entries.indexOf(settings.defaultTone))
@@ -154,8 +180,9 @@ class MainActivity : Activity() {
 
         col.addView(section("Privacy"))
         col.addView(body("The app reads a chat only when you tap it. Your style samples and notes stay on this phone. " +
-            "The chat and a few of your samples go to Claude only through the Claude app, when you press send there. " +
-            "If an app hides its text, a screenshot of the chat is shared to Claude instead."))
+            "The chat and a few of your samples go to your AI app only when you press send there. " +
+            "If an app hides its text, a screenshot of the chat is shared instead. " +
+            "Settings, your learned style and per-chat tones (kept as codes, not names) are included in your phone's backup, so they come back after a reinstall. Chats are never backed up."))
     }
 
     override fun onResume() {
@@ -165,10 +192,16 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         serviceStatus.text = if (ReplyDrafterService.instance != null) "Status: on ✓" else "Status: off"
-        claudeStatus.text = if (ClaudeHandoff.isClaudeInstalled(this)) {
-            "Claude app found ✓. Drafts open in it, on your own Claude plan."
-        } else {
-            "Claude app not found. Install Claude by Anthropic from the Play Store; until then the share sheet opens instead."
+        for ((t, rb) in aiButtons) {
+            val installed = AiHandoff.isInstalled(this, t)
+            rb.text = if (t.packageName == null || installed) t.label else "${t.label} (not installed)"
+            rb.isEnabled = installed || rb.isChecked
+        }
+        val ai = settings.aiTarget
+        aiStatus.text = when {
+            ai == AiTarget.ASK -> "Android's share sheet opens each time, so you can pick any app."
+            AiHandoff.isInstalled(this, ai) -> "${ai.label} found ✓. Drafts open in it, on your own plan."
+            else -> "${ai.label} isn't installed, so the share sheet opens instead."
         }
         sampleCount.text = "Learned samples: ${settings.loadStyle().samples.size}"
     }

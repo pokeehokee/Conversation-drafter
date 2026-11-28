@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11: back up only settings and the learned style (your own messages). Nothing else. -->
+<full-backup-content>
+    <include domain="sharedpref" path="reply_drafter.xml" />
+</full-backup-content>

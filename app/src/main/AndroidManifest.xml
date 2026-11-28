@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Lets the app see whether the Claude app is installed (Android 11+ package visibility). -->
+    <!-- Lets the app see which AI apps are installed and whether they take shared text
+         (Android 11+ package visibility). Keep in step with AiTarget in AiHandoff.kt. -->
     <queries>
         <package android:name="com.anthropic.claude" />
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.google.android.apps.bard" />
+        <package android:name="com.microsoft.copilot" />
+        <package android:name="ai.perplexity.app.android" />
     </queries>
 
     <application
-        android:allowBackup="false"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -46,7 +53,7 @@
             </intent-filter>
         </service>
 
-        <!-- Serves the fallback screenshot to the Claude app only, with a one-time read grant. -->
+        <!-- Serves the fallback screenshot to the chosen AI app only, with a one-time read grant. -->
         <provider
             android:name=".ShotProvider"
             android:authorities="com.devin.replydrafter.shots"

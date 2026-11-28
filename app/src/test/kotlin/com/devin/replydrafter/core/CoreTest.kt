@@ -182,3 +182,21 @@ class PromptBuilderTest {
         assertTrue(s.contains("Them (Sam): who's driving\nThem (Jo): not me\nMe: I will"))
     }
 }
+
+class ChatKeyTest {
+    @Test fun sameChatSameKey() {
+        assertEquals(ChatKey.of("com.whatsapp", "Alex Rivera"), ChatKey.of("com.whatsapp", "  alex rivera "))
+    }
+
+    @Test fun differentChatOrAppDifferentKey() {
+        val a = ChatKey.of("com.whatsapp", "Alex Rivera")
+        assertTrue(a != ChatKey.of("com.whatsapp", "Sam Lee"))
+        assertTrue(a != ChatKey.of("com.facebook.orca", "Alex Rivera"))
+    }
+
+    @Test fun keyHidesTheName() {
+        val k = ChatKey.of("com.whatsapp", "Alex Rivera")
+        assertEquals(16, k.length)
+        assertFalse(k.contains("alex", ignoreCase = true))
+    }
+}

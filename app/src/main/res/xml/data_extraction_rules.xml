@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: back up and move to a new phone only settings and the learned style
+     (your own messages). Chat text is never stored, so it's never backed up. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="reply_drafter.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="reply_drafter.xml" />
+    </device-transfer>
+</data-extraction-rules>

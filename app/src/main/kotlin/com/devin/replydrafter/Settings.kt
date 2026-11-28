@@ -42,6 +42,29 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_NOTES, "").orEmpty()
         set(v) = prefs.edit().putString(KEY_NOTES, v).apply()
 
+    /** Which AI app drafts the reply. */
+    var aiTarget: AiTarget
+        get() = enumOr(prefs.getString(KEY_AI, null), AiTarget.CLAUDE)
+        set(v) = prefs.edit().putString(KEY_AI, v.name).apply()
+
+    /** Open the AI app in split screen under the chat, where the phone allows it. */
+    var splitScreen: Boolean
+        get() = prefs.getBoolean(KEY_SPLIT, true)
+        set(v) = prefs.edit().putBoolean(KEY_SPLIT, v).apply()
+
+    /** Long-press the bubble to draft at once with this chat's last tone, skipping the panel. */
+    var longPressDrafts: Boolean
+        get() = prefs.getBoolean(KEY_LONG_PRESS, true)
+        set(v) = prefs.edit().putBoolean(KEY_LONG_PRESS, v).apply()
+
+    /** The last tone used in one chat. [chatKey] is a hash from ChatKey, never a name. */
+    fun toneFor(chatKey: String): Tone? =
+        prefs.getString(KEY_TONE_PREFIX + chatKey, null)?.let { n -> Tone.entries.firstOrNull { it.name == n } }
+
+    fun rememberTone(chatKey: String, tone: Tone) {
+        prefs.edit().putString(KEY_TONE_PREFIX + chatKey, tone.name).apply()
+    }
+
     var bubbleY: Int
         get() = prefs.getInt(KEY_BUBBLE_Y, -1)
         set(v) = prefs.edit().putInt(KEY_BUBBLE_Y, v).apply()
@@ -64,5 +87,9 @@ class Settings(context: Context) {
         const val KEY_SAMPLES = "style_samples"
         const val KEY_BUBBLE_Y = "bubble_y"
         const val KEY_DEPTH = "history_depth"
+        const val KEY_AI = "ai_target"
+        const val KEY_LONG_PRESS = "long_press_drafts"
+        const val KEY_SPLIT = "split_screen"
+        const val KEY_TONE_PREFIX = "tone_"
     }
 }

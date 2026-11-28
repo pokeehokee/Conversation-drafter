@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Reply Drafter</string>
     <string name="service_label">Reply Drafter</string>
-    <string name="tile_label">Reply with Claude</string>
-    <string name="service_summary">Drafts chat replies in your Claude app</string>
-    <string name="service_description">When you tap the bubble, the Reply with Claude tile or the accessibility button, Reply Drafter reads the chat on screen (scrolling back a little to get earlier messages), and opens your Claude app with it so Claude can draft a reply in your style. It can then paste Claude\'s reply into the message box. It never sends a message, and it reads nothing until you tap it. Only your own messages are kept on this phone, to learn how you write.</string>
+    <string name="tile_label">Draft reply</string>
+    <string name="service_summary">Drafts chat replies in the AI app you pick</string>
+    <string name="service_description">When you tap the bubble, the Draft reply tile or the accessibility button, Reply Drafter reads the chat on screen (scrolling back a little to get earlier messages), and opens the AI app you picked (such as Claude, ChatGPT or Gemini) with it, so the AI can draft a reply in your style. It can then paste the reply you copied into the message box. It never sends a message, and it reads nothing until you tap it. Only your own messages are kept on this phone, to learn how you write.</string>
 </resources>

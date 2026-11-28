@@ -15,6 +15,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import com.devin.replydrafter.core.ChatKey
 import com.devin.replydrafter.core.ChatReader
 import com.devin.replydrafter.core.PromptBuilder
 import com.devin.replydrafter.core.PromptRequest
@@ -29,8 +30,8 @@ import java.util.concurrent.Executors
 
 /**
  * Reads the chat on screen only when the user taps the bubble, the accessibility button or the
- * Quick Settings tile. It never sends anything: it opens the Claude app with a prompt, and can
- * paste Claude's reply (from the clipboard) into the chat's text box for the user to send.
+ * Quick Settings tile. It never sends anything: it opens the user's chosen AI app with a prompt, and
+ * can paste the reply they copied there (from the clipboard) into the chat's text box for them to send.
  */
 class ReplyDrafterService : AccessibilityService() {
 
@@ -42,6 +43,10 @@ class ReplyDrafterService : AccessibilityService() {
     /** The app the user was last typing in: the chat we read and paste into. */
     private var chatPackage: String? = null
 
+    /** After a handoff: the chat to offer "Paste reply" in when the user comes back, and since when. */
+    private var pastePending: String? = null
+    private var pastePendingSince = 0L
+
     private val buttonCallback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
         override fun onClicked(controller: AccessibilityButtonController) = overlay.togglePanel()
     }
@@ -49,7 +54,7 @@ class ReplyDrafterService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         settings = Settings(this)
-        overlay = Overlay(this, settings, onDraft = ::draft, onPaste = ::pasteReply)
+        overlay = Overlay(this, settings, onDraft = ::draft, onPaste = ::pasteReply, toneForChat = ::toneForChat)
         accessibilityButtonController.registerAccessibilityButtonCallback(buttonCallback)
         if (settings.bubbleMode == BubbleMode.ALWAYS) overlay.showBubble()
         instance = this
@@ -57,6 +62,7 @@ class ReplyDrafterService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        main.removeCallbacksAndMessages(null)
         if (::overlay.isInitialized) overlay.removeAll()
         accessibilityButtonController.unregisterAccessibilityButtonCallback(buttonCallback)
         io.shutdown()
@@ -67,16 +73,74 @@ class ReplyDrafterService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
+        if (pkg in AiHandoff.packages && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            ::overlay.isInitialized && !chatStillOnScreen()
+        ) {
+            // Never leave the pill over a full-screen AI app. In split screen the chat is still showing, so keep it.
+            main.removeCallbacks(showPill)
+            overlay.hidePastePill()
+        }
         if (isIgnoredPackage(pkg)) return
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> if (event.source?.isEditable == true) {
                 chatPackage = pkg
                 if (settings.bubbleMode == BubbleMode.WHEN_TYPING) overlay.showBubble()
+                // Tapping the chat's box: offer the pill (in split screen this is the "return"), and
+                // move it above the box as the keyboard opens.
+                if (pkg == pastePending) updatePill(pkg)
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> if (settings.bubbleMode == BubbleMode.WHEN_TYPING) {
-                if (pkg == chatPackage) overlay.showBubble() else if (!overlay.isPanelOpen) overlay.hideBubble()
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                if (settings.bubbleMode == BubbleMode.WHEN_TYPING) {
+                    if (pkg == chatPackage) overlay.showBubble() else if (!overlay.isPanelOpen) overlay.hideBubble()
+                }
+                updatePill(pkg)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- paste pill
+
+    /** Shows the pill when the chat we handed off from is back in front, hides it anywhere else. */
+    private fun updatePill(pkg: String) {
+        val target = pastePending ?: return
+        if (System.currentTimeMillis() - pastePendingSince > PASTE_WINDOW_MS) {
+            clearPill()
+        } else if (pkg == target) {
+            // The chat's own window may still be changing just as the AI app opens; wait for a real return.
+            if (System.currentTimeMillis() - pastePendingSince > HANDOFF_GRACE_MS) schedulePill()
+        } else if (!chatStillOnScreen()) {
+            main.removeCallbacks(showPill)
+            overlay.hidePastePill()
+        }
+    }
+
+    /** True while the chat we handed off from still shows, as in split screen. */
+    private fun chatStillOnScreen(): Boolean {
+        val target = pastePending ?: return false
+        return windows.any { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName == target }
+    }
+
+    /** After a split-screen handoff the chat stays on top, so put the pill on it once things settle. */
+    private val pillIfSplit = Runnable { if (chatStillOnScreen()) schedulePill() }
+
+    private val showPill = Runnable {
+        if (pastePending == null) return@Runnable
+        val input = chatWindow()?.root?.let(::messageBox)
+        val top = input?.let { Rect().also(it::getBoundsInScreen).top }
+        overlay.showPastePill(top, onDismiss = ::clearPill)
+    }
+
+    /** Waits for the window to settle (it animates in, and the keyboard may open) before placing the pill. */
+    private fun schedulePill() {
+        main.removeCallbacks(showPill)
+        main.postDelayed(showPill, PILL_SETTLE_MS)
+    }
+
+    private fun clearPill() {
+        pastePending = null
+        main.removeCallbacks(pillIfSplit)
+        main.removeCallbacks(showPill)
+        overlay.hidePastePill()
     }
 
     /** Called by settings when the bubble mode changes. */
@@ -99,7 +163,7 @@ class ReplyDrafterService : AccessibilityService() {
     // ---------------------------------------------------------------- reading the chat
 
     private fun isIgnoredPackage(pkg: String): Boolean {
-        if (pkg == packageName || pkg == ClaudeHandoff.CLAUDE_PACKAGE || pkg == "com.android.systemui") return true
+        if (pkg == packageName || pkg in AiHandoff.packages || pkg == "com.android.systemui") return true
         val imm = getSystemService(InputMethodManager::class.java) ?: return false
         return imm.enabledInputMethodList.any { it.packageName == pkg }
     }
@@ -166,7 +230,15 @@ class ReplyDrafterService : AccessibilityService() {
 
     private var busy = false
 
-    private fun draft(tone: Tone) {
+    /** The tone to preselect for the chat on screen: the one used there last, else the default. */
+    private fun toneForChat(): Tone {
+        val snap = chatWindow()?.let(::snapshot) ?: return settings.defaultTone
+        val title = ChatReader.read(snap.nodes, snap.window, snap.inputTop).title
+        return settings.toneFor(ChatKey.of(snap.packageName, title)) ?: settings.defaultTone
+    }
+
+    /** @param picked the tone chosen in the panel, or null to use this chat's last tone (long-press). */
+    private fun draft(picked: Tone?) {
         if (busy) return
         val snap = chatWindow()?.let(::snapshot)
         if (snap == null) {
@@ -174,9 +246,14 @@ class ReplyDrafterService : AccessibilityService() {
             return
         }
         chatPackage = snap.packageName
+        clearPill()
         overlay.hidePanel()
-        val job = DraftJob(tone, KNOWN_APPS[snap.packageName] ?: snap.windowTitle ?: snap.packageName, settings.historyDepth)
         val first = ChatReader.read(snap.nodes, snap.window, snap.inputTop)
+        val key = ChatKey.of(snap.packageName, first.title)
+        val tone = picked ?: settings.toneFor(key) ?: settings.defaultTone
+        settings.rememberTone(key, tone)
+        if (picked == null) toast("Drafting with ${tone.label} tone…")
+        val job = DraftJob(tone, KNOWN_APPS[snap.packageName] ?: snap.windowTitle ?: snap.packageName, settings.historyDepth)
         if (!first.isUsable || first.lines.size >= job.depth) {
             finishDraft(first, job)
         } else {
@@ -297,16 +374,22 @@ class ReplyDrafterService : AccessibilityService() {
 
     private fun handOff(req: PromptRequest, shot: android.net.Uri?) {
         overlay.hidePanel()
-        val status = ClaudeHandoff.share(this, PromptBuilder.build(req), shot)
+        val status = AiHandoff.share(this, settings.aiTarget, PromptBuilder.build(req), shot, settings.splitScreen)
+        // Offer "Paste reply" when the user comes back to this chat, or right away if it's still beside the AI app.
+        pastePending = chatPackage
+        pastePendingSince = System.currentTimeMillis()
+        if (settings.splitScreen) main.postDelayed(pillIfSplit, SPLIT_SETTLE_MS)
         toast(status)
     }
 
     // ---------------------------------------------------------------- pasting the reply back
 
+    /** The chat's message box: the focused text field, else the first visible one. */
+    private fun messageBox(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable } ?: firstEditable(root)
+
     private fun pasteReply() {
-        val root = chatWindow()?.root
-        val input = root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
-            ?: root?.let(::firstEditable)
+        val input = chatWindow()?.root?.let(::messageBox)
         if (input == null) {
             toast("I couldn't find the message box. Tap it once, then try Paste again.")
             return
@@ -314,6 +397,7 @@ class ReplyDrafterService : AccessibilityService() {
         input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val pasted = input.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         overlay.hidePanel()
+        if (pasted) clearPill()
         toast(if (pasted) "Pasted. Read it over, then send." else "Paste didn't work here. Long-press the box and tap Paste.")
     }
 
@@ -339,6 +423,11 @@ class ReplyDrafterService : AccessibilityService() {
         private const val MAX_NODES = 3000
         private const val MAX_SCROLLS = 12
         private const val SCROLL_SETTLE_MS = 450L
+        private const val PILL_SETTLE_MS = 350L
+        private const val HANDOFF_GRACE_MS = 1500L
+        private const val SPLIT_SETTLE_MS = 2000L
+        /** How long after a handoff the pill is offered. */
+        private const val PASTE_WINDOW_MS = 10 * 60 * 1000L
         private val SCROLL_BACK = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD.id
         private val SCROLL_FORWARD = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD.id
 
