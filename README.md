@@ -9,7 +9,7 @@ Works with Gboard or any keyboard: nothing about your keyboard changes.
 1. You're in a chat (Messenger, WhatsApp, Google Messages, Signal, Instagram, Telegram and others).
 2. Tap the ✍ bubble on the right edge, the **Draft reply** Quick Settings tile, or the accessibility button.
 3. Pick a tone (Auto, Casual, Warm, Funny, Flirty, Firm, Professional, Short) and tap **Draft in** (your AI app). Long-press the bubble instead to draft at once with the tone you last used in that chat.
-4. The app scrolls the chat back to collect earlier messages (30 by default; 15, 30, 60 or 100 in settings), scrolls back down, and opens your AI app with a ready prompt. Press send there. If an app doesn't take shared text, the prompt goes on the clipboard (hidden from clipboard previews) and the app opens for you to paste it.
+4. The app scrolls the chat back to collect earlier messages (30 by default; 15, 30, 60 or 100 in settings), scrolls back down, and opens your AI app with a ready prompt, in split screen under the chat where the phone allows it (Android 12L or later; you can turn this off). Press send there. If an app doesn't take shared text, the prompt goes on the clipboard (hidden from clipboard previews) and the app opens for you to paste it.
 5. Copy the reply, go back to the chat and tap the **Paste reply** pill above the message box (or the bubble, then **Paste reply**). Read it over and send it yourself.
 
 If an app hides its text from accessibility, the app shares a screenshot of the chat instead.

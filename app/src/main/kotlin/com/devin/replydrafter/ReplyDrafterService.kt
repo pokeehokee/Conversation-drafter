@@ -73,8 +73,10 @@ class ReplyDrafterService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
-        if (pkg in AiHandoff.packages && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && ::overlay.isInitialized) {
-            // Never leave the pill over the AI app itself.
+        if (pkg in AiHandoff.packages && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            ::overlay.isInitialized && !chatStillOnScreen()
+        ) {
+            // Never leave the pill over a full-screen AI app. In split screen the chat is still showing, so keep it.
             main.removeCallbacks(showPill)
             overlay.hidePastePill()
         }
@@ -83,8 +85,9 @@ class ReplyDrafterService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> if (event.source?.isEditable == true) {
                 chatPackage = pkg
                 if (settings.bubbleMode == BubbleMode.WHEN_TYPING) overlay.showBubble()
-                // The keyboard moves the message box up, so move the pill with it.
-                if (pkg == pastePending && overlay.isPillShown) schedulePill()
+                // Tapping the chat's box: offer the pill (in split screen this is the "return"), and
+                // move it above the box as the keyboard opens.
+                if (pkg == pastePending) updatePill(pkg)
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 if (settings.bubbleMode == BubbleMode.WHEN_TYPING) {
@@ -105,11 +108,20 @@ class ReplyDrafterService : AccessibilityService() {
         } else if (pkg == target) {
             // The chat's own window may still be changing just as the AI app opens; wait for a real return.
             if (System.currentTimeMillis() - pastePendingSince > HANDOFF_GRACE_MS) schedulePill()
-        } else {
+        } else if (!chatStillOnScreen()) {
             main.removeCallbacks(showPill)
             overlay.hidePastePill()
         }
     }
+
+    /** True while the chat we handed off from still shows, as in split screen. */
+    private fun chatStillOnScreen(): Boolean {
+        val target = pastePending ?: return false
+        return windows.any { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName == target }
+    }
+
+    /** After a split-screen handoff the chat stays on top, so put the pill on it once things settle. */
+    private val pillIfSplit = Runnable { if (chatStillOnScreen()) schedulePill() }
 
     private val showPill = Runnable {
         if (pastePending == null) return@Runnable
@@ -126,6 +138,7 @@ class ReplyDrafterService : AccessibilityService() {
 
     private fun clearPill() {
         pastePending = null
+        main.removeCallbacks(pillIfSplit)
         main.removeCallbacks(showPill)
         overlay.hidePastePill()
     }
@@ -361,10 +374,11 @@ class ReplyDrafterService : AccessibilityService() {
 
     private fun handOff(req: PromptRequest, shot: android.net.Uri?) {
         overlay.hidePanel()
-        val status = AiHandoff.share(this, settings.aiTarget, PromptBuilder.build(req), shot)
-        // Offer "Paste reply" when the user comes back to this chat.
+        val status = AiHandoff.share(this, settings.aiTarget, PromptBuilder.build(req), shot, settings.splitScreen)
+        // Offer "Paste reply" when the user comes back to this chat, or right away if it's still beside the AI app.
         pastePending = chatPackage
         pastePendingSince = System.currentTimeMillis()
+        if (settings.splitScreen) main.postDelayed(pillIfSplit, SPLIT_SETTLE_MS)
         toast(status)
     }
 
@@ -411,6 +425,7 @@ class ReplyDrafterService : AccessibilityService() {
         private const val SCROLL_SETTLE_MS = 450L
         private const val PILL_SETTLE_MS = 350L
         private const val HANDOFF_GRACE_MS = 1500L
+        private const val SPLIT_SETTLE_MS = 2000L
         /** How long after a handoff the pill is offered. */
         private const val PASTE_WINDOW_MS = 10 * 60 * 1000L
         private val SCROLL_BACK = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD.id

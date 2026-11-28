@@ -39,7 +39,14 @@ object AiHandoff {
     }
 
     /** @return a short status line for the user. */
-    fun share(context: Context, target: AiTarget, prompt: String, screenshot: Uri?): String {
+    /**
+     * @param splitScreen ask Android to open the AI app beside the chat (split screen). Android 12L and
+     *   later can do this from full screen; it's best effort, and the app opens full screen if the phone
+     *   or the AI app doesn't support it.
+     */
+    fun share(context: Context, target: AiTarget, prompt: String, screenshot: Uri?, splitScreen: Boolean): String {
+        val windowFlags = Intent.FLAG_ACTIVITY_NEW_TASK or
+            (if (splitScreen) Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT else 0)
         val send = Intent(Intent.ACTION_SEND).apply {
             putExtra(Intent.EXTRA_TEXT, prompt)
             if (screenshot != null) {
@@ -50,12 +57,11 @@ object AiHandoff {
             } else {
                 type = "text/plain"
             }
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         val pkg = target.packageName
         if (pkg != null && isInstalled(context, target)) {
-            val direct = Intent(send).setPackage(pkg)
+            val direct = Intent(send).setPackage(pkg).addFlags(windowFlags)
             if (direct.resolveActivity(context.packageManager) != null) {
                 try {
                     context.startActivity(direct)
@@ -68,11 +74,12 @@ object AiHandoff {
             val launch = context.packageManager.getLaunchIntentForPackage(pkg)
             if (screenshot == null && launch != null) {
                 copySensitive(context, prompt)
-                context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                context.startActivity(launch.addFlags(windowFlags))
                 return "Opened ${target.label}. Paste the prompt (it's on your clipboard), send it, then copy the reply."
             }
         }
 
+        // The share sheet decides how the picked app opens, so split screen can't be asked for here.
         val chooser = Intent.createChooser(send, "Draft the reply in…").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
         return when {

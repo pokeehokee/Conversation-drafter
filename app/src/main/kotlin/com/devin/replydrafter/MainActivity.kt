@@ -83,6 +83,12 @@ class MainActivity : Activity() {
         col.addView(ais)
         aiStatus = body("")
         col.addView(aiStatus)
+        col.addView(Switch(this).apply {
+            text = "Open the AI app in split screen, under the chat"
+            isChecked = settings.splitScreen
+            setOnCheckedChangeListener { _, on -> settings.splitScreen = on }
+        })
+        col.addView(body("Works on most phones with Android 12L or later, if the AI app allows split screen. Otherwise it opens full screen as before."))
 
         // 3. How to open it
         col.addView(section("3. How to open it"))
