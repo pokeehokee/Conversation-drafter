@@ -11,7 +11,7 @@ import java.io.File
 import java.io.FileNotFoundException
 
 /**
- * Serves the one fallback screenshot to the Claude app, read-only, by temporary URI grant.
+ * Serves the one fallback screenshot to the chosen AI app, read-only, by temporary URI grant.
  * A tiny stand-in for androidx FileProvider so the app has no library dependencies.
  */
 class ShotProvider : ContentProvider() {

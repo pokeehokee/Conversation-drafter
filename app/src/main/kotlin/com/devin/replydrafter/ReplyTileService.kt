@@ -3,7 +3,7 @@ package com.devin.replydrafter
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
-/** Quick Settings tile: pull down the shade, tap "Reply with Claude", get the panel over the chat. */
+/** Quick Settings tile: pull down the shade, tap "Draft reply", get the panel over the chat. */
 class ReplyTileService : TileService() {
 
     override fun onStartListening() {
